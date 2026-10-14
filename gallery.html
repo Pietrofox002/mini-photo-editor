@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Galleria · Mini Photo Editor</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  h2{margin:0;padding:16px 24px 0;font-size:1.1rem}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;padding:12px 24px 8px}
+  figure{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  figure img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block}
+  figcaption{display:grid;gap:6px;padding:8px 12px;font-size:.9rem}
+  figcaption span{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  figcaption .row button{padding:4px 8px;font-size:.85rem}
+  .msg{padding:8px 24px;color:var(--muted)}
+  header a{color:var(--accent)}
+</style>
+</head>
+<body>
+<header><h1>Galleria</h1><p><a href="index.html">Torna all'editor</a></p></header>
+<div id="out"></div>
+<script src="config.js"></script>
+<script src="cloud.js"></script>
+<script>
+const $out = document.getElementById('out'), U = Cloud.user();
+const list = async q => (await (await Cloud.ok(await Cloud.api(`/rest/v1/photos?select=id,path,title,visibility,status,owner&order=created_at.desc&limit=100&${q}`))).json());
+const btn = (label, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.onclick = fn; return b; };
+
+async function section(title, query, actions, empty) {
+  const h = document.createElement('h2'), grid = document.createElement('div'), msg = document.createElement('p');
+  grid.className = 'grid'; msg.className = 'msg'; h.textContent = title;
+  $out.append(h, msg, grid);
+  try {
+    const rows = await list(query), urls = await Cloud.sign(rows.map(p => p.path));
+    msg.textContent = rows.length ? '' : empty;
+    rows.forEach(p => {
+      const fig = document.createElement('figure'), img = new Image(), cap = document.createElement('figcaption'), name = document.createElement('span'), row = document.createElement('div');
+      img.loading = 'lazy'; img.alt = p.title || 'Foto'; img.src = urls[p.path] || '';
+      name.textContent = (p.title || '') + (actions.badge ? ` · ${p.visibility === 'public' ? (p.status === 'approved' ? 'pubblica' : 'in attesa di approvazione') : 'privata'}` : '');
+      row.className = 'row'; row.append(...actions.buttons(p, fig, () => location.reload()));
+      cap.append(name, row); fig.append(img, cap); grid.append(fig);
+    });
+  } catch (e) { msg.textContent = 'Impossibile caricare (' + e.message + ').'; }
+}
+
+async function removePhoto(p) {
+  if (!confirm('Eliminare definitivamente questa foto?')) return false;
+  try {
+    await Cloud.ok(await Cloud.api(`/storage/v1/object/photos/${p.path}`, { method: 'DELETE' }));
+    await Cloud.ok(await Cloud.api(`/rest/v1/photos?id=eq.${p.id}`, { method: 'DELETE' }));
+    return true;
+  } catch (e) { alert('Non riuscito: ' + e.message); return false; }
+}
+
+(async () => {
+  if (!Cloud.enabled()) { $out.innerHTML = '<p class="msg">Galleria non configurata: compila config.js.</p>'; return; }
+  if (U) await section('Le mie foto nel cloud', `owner=eq.${U.id}`, { badge: true, buttons: (p, fig, reload) => [
+    btn(p.visibility === 'public' ? 'Rendi privata' : 'Rendi pubblica', async () => {
+      const vis = p.visibility === 'public' ? 'private' : 'public';
+      await Cloud.ok(await Cloud.api(`/rest/v1/photos?id=eq.${p.id}`, { method: 'PATCH', headers: Cloud.json, body: JSON.stringify({ visibility: vis }) }));
+      reload(); }),
+    btn('Elimina', async () => { if (await removePhoto(p)) fig.remove(); })] }, 'Non hai ancora foto nel cloud.');
+  await section('Galleria pubblica', 'visibility=eq.public&status=eq.approved', { buttons: p => U && p.owner !== U.id ? [
+    btn('Segnala', async () => {
+      try { await Cloud.ok(await Cloud.api('/rest/v1/reports', { method: 'POST', headers: Cloud.json, body: JSON.stringify({ photo_id: p.id }) })); alert('Segnalazione inviata.'); }
+      catch (e) { alert('Non riuscito: ' + e.message); } })] : [] }, 'Ancora nessuna foto pubblica.');
+})();
+</script>
+</body>
+</html>

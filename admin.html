@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Moderazione · Mini Photo Editor</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  #login{display:grid;gap:10px;max-width:340px;margin:16px 24px;padding:16px;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+  #login label{display:grid;gap:4px;font-size:.9rem}
+  input[type=email],input[type=password]{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+  #bar{display:flex;gap:12px;align-items:center;padding:0 24px}
+  #bar button{flex:none}
+  #bar{flex-wrap:wrap}
+  figcaption{display:grid!important}
+  figcaption .row button{padding:4px 8px;font-size:.85rem}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;padding:16px 24px 24px}
+  figure{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  figure img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block}
+  figcaption{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px 12px;font-size:.9rem}
+  figcaption span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+  figcaption button{flex:none;padding:4px 10px;color:#b3261e}
+  #msg{padding:8px 24px;color:var(--muted)}
+  header a{color:var(--accent)}
+</style>
+</head>
+<body>
+<header><h1>Moderazione</h1><p><a href="gallery.html">Galleria pubblica</a></p></header>
+
+<form id="login" hidden>
+  <label>Email<input id="email" type="email" autocomplete="username" required></label>
+  <label>Password<input id="pw" type="password" autocomplete="current-password" required></label>
+  <button class="primary" type="submit">Accedi</button>
+</form>
+
+<div id="bar" hidden>
+  <select id="filter" aria-label="Filtro"><option value="pending">Da approvare</option><option value="reported">Segnalate</option><option value="all">Tutte</option></select>
+  <label>Motivo accessi <input id="reason" value="moderazione" size="16"></label>
+  <span id="count"></span><button id="logout" type="button">Esci</button>
+</div>
+<p id="msg" role="status"></p>
+<div id="grid" class="grid"></div>
+
+<script src="config.js"></script>
+<script src="cloud.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const err = e => alert('Operazione non riuscita: ' + e.message);
+const log = (p, action) => Cloud.api('/rest/v1/admin_log', { method: 'POST', headers: { ...Cloud.json, Prefer: 'return=minimal' },
+  body: JSON.stringify({ photo_id: p.id, owner: p.owner, action, reason: $('#reason').value }) });
+
+function showLogin(note = '') { Cloud.logout(); $('#login').hidden = false; $('#bar').hidden = true; $('#grid').replaceChildren(); $('#msg').textContent = note; }
+$('#login').addEventListener('submit', async e => {
+  e.preventDefault(); $('#msg').textContent = 'Accesso in corso…';
+  try { await Cloud.login('in', $('#email').value, $('#pw').value); $('#pw').value = ''; start(); }
+  catch (x) { $('#msg').textContent = 'Accesso non riuscito: ' + x.message; }
+});
+$('#logout').onclick = () => showLogin('Sei uscito.');
+$('#filter').onchange = load;
+
+async function start() {
+  try {
+    const r = await Cloud.ok(await Cloud.api('/rest/v1/rpc/is_admin', { method: 'POST', headers: Cloud.json, body: '{}' }));
+    if (!(await r.json())) return showLogin('Questo account non è un amministratore.');
+  } catch (e) { return showLogin('Sessione non valida: accedi di nuovo.'); }
+  $('#login').hidden = true; $('#bar').hidden = false; load();
+}
+
+async function load() {
+  $('#msg').textContent = 'Caricamento…';
+  const f = $('#filter').value;
+  try {
+    let q = 'order=created_at.desc&limit=100&select=id,path,title,owner,visibility,status,created_at';
+    if (f === 'pending') q += '&visibility=eq.public&status=eq.pending';
+    if (f === 'reported') {
+      const ids = [...new Set((await (await Cloud.ok(await Cloud.api('/rest/v1/reports?select=photo_id'))).json()).map(x => x.photo_id))];
+      q += `&id=in.(${ids.join(',') || 0})`;
+    }
+    const rows = await (await Cloud.ok(await Cloud.api('/rest/v1/photos?' + q))).json();
+    $('#count').textContent = rows.length + ' foto';
+    $('#msg').textContent = rows.length ? 'Le immagini si aprono con "Mostra" e ogni accesso viene registrato.' : 'Nessuna foto.';
+    $('#grid').replaceChildren(...rows.map(card));
+  } catch (e) { $('#msg').textContent = 'Errore: ' + e.message; }
+}
+
+function card(p) {
+  const fig = document.createElement('figure'), img = new Image(), cap = document.createElement('figcaption'), name = document.createElement('span'), row = document.createElement('div');
+  img.alt = p.title || 'Foto'; img.style.minHeight = '140px'; img.style.background = 'var(--line)';
+  name.textContent = `${p.title || p.path} · ${p.visibility === 'public' ? (p.status === 'approved' ? 'pubblica' : 'da approvare') : 'privata'} · utente ${p.owner.slice(0, 8)}`;
+  row.className = 'row';
+  const show = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Mostra' });
+  show.onclick = async () => { try { await log(p, 'view'); img.src = (await Cloud.sign([p.path]))[p.path]; show.remove(); } catch (e) { err(e); } };
+  row.append(show);
+  if (p.visibility === 'public' && p.status === 'pending') {
+    const ok = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Approva' });
+    ok.onclick = async () => { try {
+      const r = await Cloud.ok(await Cloud.api(`/rest/v1/photos?id=eq.${p.id}`, { method: 'PATCH', headers: { ...Cloud.json, Prefer: 'return=representation' }, body: JSON.stringify({ status: 'approved' }) }));
+      if (!(await r.json()).length) throw new Error('Non autorizzato');
+      await log(p, 'approve'); fig.remove(); } catch (e) { err(e); } };
+    row.append(ok);
+  }
+  const del = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Elimina' });
+  del.onclick = async () => {
+    if (!confirm(`Eliminare definitivamente "${p.title || p.path}"? L'azione non si può annullare.`)) return;
+    try {
+      await log(p, 'delete');
+      await Cloud.ok(await Cloud.api(`/storage/v1/object/photos/${p.path}`, { method: 'DELETE' }));
+      const r = await Cloud.ok(await Cloud.api(`/rest/v1/photos?id=eq.${p.id}`, { method: 'DELETE', headers: { Prefer: 'return=representation' } }));
+      if (!(await r.json()).length) throw new Error('Non autorizzato');
+      fig.remove();
+    } catch (e) { err(e); }
+  };
+  row.append(del); cap.append(name, row); fig.append(img, cap);
+  return fig;
+}
+
+if (!Cloud.enabled()) $('#msg').textContent = 'Compila config.js (vedi README).';
+else if (Cloud.user()) start(); else showLogin();
+</script>
+</body>
+</html>

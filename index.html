@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini Photo Editor</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><h1>Mini Photo Editor</h1><p>Le foto restano su questo dispositivo finché non scegli di pubblicarle. <a href="gallery.html">Vai alla galleria pubblica</a> · <span id="acct"><button id="acct-btn" type="button" class="linklike">Accedi o registrati</button></span></p></header>
+<section id="library" aria-label="Le tue foto">
+  <label class="add" for="file">+ Aggiungi foto</label>
+  <label class="add" for="camera">Scatta foto</label>
+  <div id="thumbs"></div>
+</section>
+<main>
+  <section id="stage">
+    <label id="drop" for="file">
+      <strong>Trascina qui una foto</strong>
+      <span>oppure clicca per scegliere un file</span>
+    </label>
+    <input id="file" type="file" accept="image/*" multiple hidden>
+    <input id="camera" type="file" accept="image/*" capture="environment" hidden>
+    <canvas id="canvas" hidden></canvas>
+  </section>
+  <aside id="panel" aria-label="Controlli">
+    <div id="sliders"></div>
+    <div class="row">
+      <button data-act="rotate">Ruota 90°</button>
+      <button data-act="flip">Specchia</button>
+    </div>
+    <div class="row">
+      <button id="compare">Tieni premuto: originale</button>
+    </div>
+    <div class="row">
+      <button data-act="reset">Azzera</button>
+      <select id="format"><option value="image/png">PNG</option><option value="image/jpeg">JPG</option></select>
+      <button id="download" class="primary">Scarica</button>
+    </div>
+    <div class="row"><select id="visibility" aria-label="Visibilità"><option value="private">Privata</option><option value="public">Pubblica (dopo approvazione)</option></select><button id="publish">Salva nel cloud</button></div>
+    <p id="status" role="status" class="hint"></p>
+  </aside>
+</main>
+<dialog id="auth" aria-labelledby="c-title">
+  <h2 id="c-title">Account</h2>
+  <form>
+    <label>Email<input id="a-email" type="email" autocomplete="username" required></label>
+    <label>Password<input id="a-pw" type="password" autocomplete="current-password" minlength="8" required></label>
+    <label class="check"><input id="age" type="checkbox"> Ho almeno 18 anni e accetto le condizioni qui sotto (solo per registrarmi).</label>
+    <p class="hint"><strong>Condizioni.</strong> Le foto salvate nel cloud sono "private": nessun altro utente le vede, ma il gestore dell'app può aprirle per moderare i contenuti, e ogni accesso viene registrato. Le foto pubbliche compaiono nella galleria solo dopo l'approvazione del gestore. Eliminare una foto dall'app non la rimuove dal cloud: eliminala dal cloud o scrivi a <span id="contact">il gestore</span>. Senza account l'app funziona solo sul tuo dispositivo.</p>
+    <p id="auth-err" class="hint" role="alert"></p>
+    <div class="row"><button id="auth-close" type="button">Chiudi</button><button id="signup" type="button">Registrati</button><button class="primary" type="submit">Accedi</button></div>
+  </form>
+</dialog>
+<script src="config.js"></script>
+<script src="cloud.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
